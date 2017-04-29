@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+ 
+<html>
+    <head>
+        <title>LiveStream</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+		<script type="text/javascript" src="/assets/hasher.js"></script>
+		<script type="text/javascript" src="/assets/core.js"></script>
+		<link rel="stylesheet" href="https://gitcdn.link/repo/Chalarangelo/mini.css/master/dist/mini-default.min.css">
+		<link rel="stylesheet" href="/assets/bulma.css">
+      <!--Let browser know website is optimized for mobile-->
+      <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    </head>
+    <body>
+	<div class="container fullscreen">
+		<header>
+			<div class="row headermarg">
+				<div class="col-sm-2">
+					<span id="header" class="removemarg">IANT Media Stream</span>
+				</div>	
+				<div class="col-sm-10 right">
+					<span id="detailToggle">Simple</span>
+				</div>
+			</div>
+		</header>
+		
+		<div class="row hide" id="togglesource">
+			<div class="col-sm-12 center">
+				<span id="scene-coll">Source Selection</span>
+				<span id="scene">Choose Scene</span>
+				<span id="select-scene">Select Scene</span>
+			</div>
+		</div>
+		
+		
+		<div id="authPanel" class="row show bigmarg">
+			<div class="col-sm-12">
+				<input placeholder="Type Password" type="text" id="messageinput"/>
+				<label for="messageinput"></label>
+			</div>
+			<div class="col-sm-12">
+				<button class = "" type="button" onclick="login();" >Login</button>
+			</div>
+		</div>
+		<div class="row hide bigmarg" id="controlPanel">
+		<div class="onoffswitch">
+			<input type="checkbox" name="onoffswitch" class="onoffswitch-checkbox" id="myonoffswitch" onclick="send();">
+			<label class="onoffswitch-label" for="myonoffswitch">
+				<span class="onoffswitch-inner"></span>
+				<span class="onoffswitch-switch"></span>
+			</label>
+		</div>
+		<br/><br/>
+				<button type="button" onclick="logoff();" >Logoff</button>
+		</div>
+		<div class="row spacer col-sm-12"></div>
+		<div class="row spacer col-sm-12" id="muteYouTubeVideoPlayer">
+		
+		<iframe id="existing-iframe-example"
+			width="240" height="135" 
+			src="https://www.youtube.com/embed/live_stream?channel=UC8vgOIUhH_MZom2SkxQ_rbQ&autoplay=1&modestbranding=1&rel=0&controls=1&showinfo=0&enablejsapi=1" 
+			frameborder="0" allowfullscreen>
+		</iframe>
+
+		
+		</div>
+		<!-- Server responses get written here -->
+        <div id="messages"></div>
+	</div>
+
+<script type="text/javascript">
+  var tag = document.createElement('script');
+  tag.id = 'iframe-demo';
+  tag.src = 'https://www.youtube.com/iframe_api';
+  var firstScriptTag = document.getElementsByTagName('script')[0];
+  firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+  var player;
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('existing-iframe-example', {
+		playerVars: { 'autoplay': 1, 'controls': 0, 'modestbranding':1},
+		events: {
+          'onReady': onPlayerReady
+        }
+    });
+  }
+  function onPlayerReady(event) {
+	player.playVideo();
+    player.mute();
+  }
+</script>
+
+
+
+
+
+
+
+	<!-- Script to utilise the WebSocket -->
+        <script type="text/javascript">
+            var webSocket;
+            var messages = document.getElementById("messages");
+			var authed = 0;
+			var commandissued = 0
+			var streamon = 0;
+            function openSocket(){
+                // Ensures only one connection is open at a time
+                if(webSocket !== undefined && webSocket.readyState !== WebSocket.CLOSED){
+                   writeResponse("WebSocket is already opened.");
+                    return;
+                }
+                // Create a new instance of the websocket
+                webSocket = new WebSocket("ws://192.168.1.6:4444");
+                 
+                // Binds functions to the listeners for the websocket.
+                webSocket.onopen = function(event){
+                    // For reasons I can't determine, onopen gets called twice
+                    // and the first time event.data is undefined.
+                    // Leave a comment if you know the answer.
+                    if(event.data === undefined)
+                        return;
+                    writeResponse(event.data);
+                };
+ 
+                webSocket.onmessage = function(event){
+					var req = JSON.parse(event.data);
+					if(req.authRequired!==undefined && authed==0){
+						authorize(event);
+					} else if (authed==0 && req.status=="ok"){					
+						document.getElementById("authPanel").className = "row hide bigmarg";
+						document.getElementById("controlPanel").className = "row show bigmarg";
+						messages.innerHTML = "";
+						authed=1;
+						webSocket.send(JSON.stringify({
+							'request-type': 'GetStreamingStatus'
+							}));
+					}
+					else{
+					writeResponse(event);
+					}
+                };
+ 
+                webSocket.onclose = function(event){
+                    writeResponse("Connection closed");
+                };
+            }
+			
+           	function authorize(event){
+			//messages.innerHTML += "<br/>" + event.data;
+			
+			var req = JSON.parse(event.data);
+			var shaObj = new jsSHA("SHA-256", "TEXT");
+			var shaObj2 = new jsSHA("SHA-256", "TEXT");
+			
+			var salt = req.salt;		
+			var challenge = req.challenge;
+			var password = document.getElementById("messageinput").value;
+			var secret_string = password + salt;
+			
+			
+			
+			//var secret_hash = binary_256(secret_string);
+			//var secret = base64_encode(secret_hash);
+			shaObj.update(secret_string);
+			var secret = shaObj.getHash("B64");
+			var auth_response_string = secret + challenge;
+
+			
+			shaObj2.update(auth_response_string);
+			var auth_response = shaObj2.getHash("B64");
+
+			webSocket.send(JSON.stringify({
+				'request-type': 'Authenticate',
+				'auth': auth_response
+				}));
+			}
+			function login(){
+				webSocket.send(JSON.stringify({
+				'request-type': 'GetAuthRequired'
+				}));			
+			}
+            function send(){
+				//first change scene collection to correct collection
+				webSocket.send(JSON.stringify({
+				'request-type': 'SetCurrentSceneCollection',
+				'sc-name': 'Test'
+				}));
+				//change scene name to correct name
+				webSocket.send(JSON.stringify({
+				'request-type': 'SetCurrentScene',
+				'scene-name': 'MPH'
+				}));
+				//start streaming
+				webSocket.send(JSON.stringify({
+				'request-type': 'StartStopStreaming'
+				}));
+				//start streaming
+				webSocket.send(JSON.stringify({
+				'request-type': 'StartStopRecording'
+				}));				
+            }
+           
+            function logoff(){
+				authed=0;
+				document.getElementById("controlPanel").className = "row hide bigmarg";	
+               	document.getElementById("authPanel").className = "row show bigmarg";
+				if (streamon==1){
+				webSocket.send(JSON.stringify({
+				'request-type': 'StartStopStreaming'
+				}));				
+				webSocket.send(JSON.stringify({
+				'request-type': 'StartStopRecording'
+				}));			
+			}
+				webSocket.close();
+				location.reload();
+            }
+			// streamon and commandsent variables are intended to catch race conditions between checking status for toggle bar
+			// and the delay it takes for the server to say the stream has stopped, interacts with logoff procedure
+            function writeResponse(text){
+			//switch case, so that if status=green, green box, if not, red box, etc
+			var jaz = JSON.parse(text.data);
+			if (streamon==0 && jaz.streaming==true && commandissued==0){
+				document.getElementById("myonoffswitch").checked = true;
+			}			
+			if (jaz.recording==false && jaz.streaming==false){
+			//	document.getElementById("myonoffswitch").checked = false;
+				messages.innerHTML = "<br/> Stream Offline";
+			}
+			if (jaz.recording==true && jaz.streaming==true && commandissued==0 && streamon==0){
+				var iframe = document.getElementById('existing-iframe-example');
+				iframe.src = iframe.src;
+				document.getElementById("myonoffswitch").checked = true;
+				messages.innerHTML = "<br/> Stream On! <br/>There will be a 10-20 second delay <br/>Close stream before logging off";
+				streamon=1;
+			}
+			if (jaz['update-type']=="StreamStarted"){
+				messages.innerHTML = "<br/> Stream Started";
+				streamon=1;
+				}
+			if (jaz['update-type']=="StreamStopped"){
+				messages.innerHTML = "<br/> Stream Stopped";
+				streamon=0;				
+				}
+			if (jaz['update-type']=="StreamStopping"){
+				commandissued = 1;
+			}
+			if (jaz.error!==undefined && jaz.error=="Authentication Failed."){
+				messages.innerHTML = "<br/> Incorrect Password";
+				}
+            }
+           window.onload = openSocket;
+		   
+        </script>
+    </body>
+</html>
