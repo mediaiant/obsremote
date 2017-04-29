@@ -147,8 +147,7 @@
             }
 			
            	function authorize(event){
-			//messages.innerHTML += "<br/>" + event.data;
-			
+
 			var req = JSON.parse(event.data);
 			var shaObj = new jsSHA("SHA-256", "TEXT");
 			var shaObj2 = new jsSHA("SHA-256", "TEXT");
@@ -220,6 +219,10 @@
 			// and the delay it takes for the server to say the stream has stopped, interacts with logoff procedure
             function writeResponse(text){
 			//switch case, so that if status=green, green box, if not, red box, etc
+			if (text.data==undefined){
+			messages.innerHTML = "<br/> Please make sure OBS is running";
+			}
+			//messages.innerHTML = text.data;
 			var jaz = JSON.parse(text.data);
 			if (streamon==0 && jaz.streaming==true && commandissued==0){
 				document.getElementById("myonoffswitch").checked = true;
